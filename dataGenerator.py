@@ -1,6 +1,6 @@
 import pandas as pd
 from dateutil.relativedelta import relativedelta
-
+import copy
 # read raw data and extract date column
 train_raw = pd.read_csv('train.csv')
 
@@ -14,12 +14,13 @@ train = train_raw.loc[train_ids, ]
 test = train_raw.loc[~train_ids, ]
 
 # create the initial training data
-train.to_csv('train_ini.csv')
+train.to_csv('train_ini.csv',sep=',',index=False)
 
 # create test.csv 
 # removes weekly sales
-test = test.drop(columns=['Weekly_Sales'])
-test.to_csv('test.csv')
+test_tmp = copy.deepcopy(test)
+test_tmp = test_tmp.drop(columns=['Weekly_Sales'])
+test_tmp.to_csv('test.csv',sep=',',index=False)
 
 # create 10 time-series
 num_folds = 10
@@ -34,7 +35,7 @@ for i in range(num_folds):
   test_fold = test.loc[test_ids, ]
 
   # write fold to a file
-  test_fold.to_csv('fold_{}.csv'.format(i + 1))
+  test_fold.to_csv('fold_{}.csv'.format(i + 1),sep=',',index=False)
   print(f'Folds:{i+1} is created....')
 
 print('Created is Done!')
