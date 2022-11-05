@@ -4,63 +4,16 @@ from datetime import date
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import OneHotEncoder
+from sklearn import datasets, ensemble
 
-
-
-def preprocess(train, test,next_fold, t):
-    
-    if t == 1:
-        start_date = pd.to_datetime("2010-02-01")
-        end_date = start_date + relativedelta(months=(13))
-        print(f'start_date:{start_date}')
-        print(f'end_date:{end_date}')
-        time_ids = (pd.to_datetime(test['Date'])>=start_date)&(pd.to_datetime(test['Date'])<start_date)
-        test_current = test.loc[time_ids,]
-        holiday_ids = test_current['IsHoliday']==False
-        test_current = test_current.loc[holiday_ids,]
-
-        start_last_year = min(test_current['Date']) - 375
-        end_last_year = max(test_current['Date']) - 350
-        print(f'test_current:{test}')
-
-        print(f'train:{train}')
-    
-    else:
-        start_date = pd.to_datetime("2011-03-01") + relativedelta(months=2 * (t-1))
-        end_date = pd.to_datetime("2011-05-01") + relativedelta(months=2 * (t-1))
-        tmp1 = pd.to_datetime("2010-12-31").isocalendar()[1]
-        tmp2 = pd.to_datetime("2011-12-30").isocalendar()[1]
-
-        find_week = lambda x : x.isocalendar()[1]
-        test['Wk'] =  pd.to_datetime(test['Date']).apply(find_week)
-        train['Wk'] =  pd.to_datetime(train['Date']).apply(find_week)
-        
-        time_ids = (pd.to_datetime(test['Date'])>=start_date)&(pd.to_datetime(test['Date'])<end_date)
-        tmp_time_ids = (pd.to_datetime(test['Date'])>=start_date)
-        test_current = test.loc[time_ids,]
-        # print(f'test_current:{test_current}')
-        holiday_ids = test_current['IsHoliday']==False
-        test_current = test_current.loc[holiday_ids,]
-
-        
-        # print(f'test_current:{test_current}')
-        start_last_year = test_current['Date'].min() -  relativedelta(days=375)
-        end_last_year = test_current['Date'].max() - relativedelta(days=350)
-
-        tmp_train_time_ids = (pd.to_datetime(train['Date'])>start_last_year)&(pd.to_datetime(train['Date'])<end_last_year)
-        tmp_train = train.loc[tmp_train_time_ids,]
-        tmp_train = tmp_train.rename(columns={"Weekly_Sales": "Weekly_Pred"})
-
-        test_pred = pd.merge(test_current,tmp_train,how='left',on=['Dept', 'Store', 'Wk'])
-        # pred_ids = 
-
-
-        # print(f'train:{train}')
-    
-    return train
-
+import warnings
+warnings.filterwarnings("ignore")
 
 def mypredict(train, test, next_fold, t):
+    
+    if t!=1:
+        train = pd.concat([train,next_fold],ignore_index=True)
 
     # not all depts need prediction
     
@@ -81,17 +34,9 @@ def mypredict(train, test, next_fold, t):
     time_ids = (pd.to_datetime(test['Date'])>=start_date)&(pd.to_datetime(test['Date'])<end_date)
     test_current = test.loc[time_ids,]
 
-
-    # print(f'test_current:{test_current}')
-    holiday_ids = test_current['IsHoliday']==False
-    test_current = test_current.loc[holiday_ids,]
-
-
     test_depts = test_current.Dept.unique()
     test_pred = None
     
-
-
     for dept in test_depts:    
     # no need to consider stores that do not need prediction
     # or do not have training samples
@@ -105,48 +50,74 @@ def mypredict(train, test, next_fold, t):
             
             tmp_train = train_dept_data[train_dept_data['Store']==store]
             tmp_test = test_dept_data[test_dept_data['Store']==store]
-            num_train = tmp_train.shape[0]
-            num_test = tmp_test.shape[0]
 
-            Wk_attribute_list = np.arange(1,53)
-            # tmp_train['Wk'] = pd.Categorical(tmp_train['Wk'], categories=Wk_attribute_list)
-            # tmp_test['Wk'] = pd.Categorical(tmp_test['Wk'], categories=Wk_attribute_list)
 
-            train_weeks = train_dept_data.Wk.unique()
-            # test_weeks = test_dept_data.Wk.unique()
+            trainY = tmp_train['Weekly_Sales']
+            tmp_train = tmp_train.drop(['Weekly_Sales'],axis=1)
 
-            train_years = train_dept_data.Yr.unique()
-            # test_years = test_dept_data.Yr.unique()
+            ohe = OneHotEncoder(handle_unknown='ignore',sparse=False,drop='if_binary')
+            enc = ohe.fit_transform(tmp_train[['Wk','IsHoliday','Yr']])
 
-            trainWk_membership = [np.reshape(np.array(tmp_train['Wk'].values == elem).astype(np.float64), (num_train,1)) for elem in train_weeks]
-            trainYr_intercept = [np.reshape(np.array(tmp_train['Yr'].values == elem).astype(np.float64), (num_train,1)) for elem in train_years]
-            train_val_column =  np.reshape(tmp_train['Weekly_Sales'].values,(num_train,1))
-            
-            testWk_membership = [np.reshape(np.array(tmp_test['Wk'].values == elem).astype(np.float64), (num_test,1)) for elem in train_weeks]
-            testYr_intercept = [np.reshape(np.array(tmp_test['Yr'].values == elem).astype(np.float64), (num_test,1)) for elem in train_years]
+            ### encoding features ###
+            train_dummy = pd.DataFrame(enc,columns=ohe.get_feature_names_out())
+            test_dummy = pd.DataFrame(ohe.transform(tmp_test[['Wk','IsHoliday','Yr']]),columns=ohe.get_feature_names_out())
 
-            trainDesign_matrix_a = np.hstack(tuple(trainWk_membership))
-            trainDesign_matrix_b = np.hstack(tuple(trainYr_intercept))
-            trainDesign_matrix = np.hstack(( trainDesign_matrix_a, trainDesign_matrix_b, train_val_column))
+            # print('train Yr:',tmp_train['Yr'])
+            # print('train Dept:',tmp_train['Dept'])
+            # print('train Store:',tmp_train['Store'])
+            ### covert to dataframe ###
+            train_dummy['Yr'] = tmp_train['Yr'].to_numpy()
+            train_dummy['Store'] = tmp_train['Store'].to_numpy()
+            train_dummy['Dept'] = tmp_train['Dept'].to_numpy()
+            # print('train_dummy Yr:',train_dummy['Yr'])
+            # print('train_dummy Dept:',train_dummy['Dept'])
+            # print('train_dummy Store:',train_dummy['Store'])
+            test_dummy['Yr'] = tmp_test['Yr'].to_numpy()
+            test_dummy['Store'] = tmp_test['Store'].to_numpy()
+            test_dummy['Dept'] = tmp_test['Dept'].to_numpy()
 
-            testDesign_matrix_a = np.hstack(tuple(testWk_membership))
-            testDesign_matrix_b = np.hstack(tuple(testYr_intercept))
-            testDesign_matrix = np.hstack(( testDesign_matrix_a, testDesign_matrix_b))
+            new_col_list = ohe.get_feature_names_out()
+            # print(f'new_col_list:{new_col_list}')
+            new_col_list = new_col_list.tolist() + ['Dept','Store']
+            # print(f'new_col_list:{new_col_list}')
+            train_dummy = train_dummy[new_col_list]
+            test_dummy = test_dummy[new_col_list]
 
-            train_Y = trainDesign_matrix[:,-1]
-            trainDesign_matrix = trainDesign_matrix[:,:-1]
+            # print('dummy max:',train_dummy.max())
+            # print('Y max',trainY.max())
+            # train_dummy = train_dummy.fillna(0)
+            # trainY = trainY.fillna(0)
+            params = {"n_estimators": 500,
+                      "max_depth": 4,
+                      "min_samples_split": 5,
+                      "learning_rate": 0.01,
+                      "loss": "squared_error",
+            }
+            # reg = LinearRegression().fit(train_dummy, trainY)
 
-            reg = LinearRegression().fit(trainDesign_matrix, train_Y)
-            mycoef = reg.coef_
-            myintercept = reg.intercept_
+            reg = ensemble.GradientBoostingRegressor(**params)
+            reg.fit(train_dummy, trainY)
+            # mycoef = reg.coef_
+            # myintercept = reg.intercept_
+            # mycoef[np.isnan(mycoef)] = 0
 
-            mycoef[np.isnan(mycoef)] = 0
-            if myintercept == np.nan:
-                myintercept = 0
+            # mycoef[np.abs(mycoef)>10e8] = 0
 
-            tmp_pred = myintercept + np.dot(testDesign_matrix,mycoef).reshape(-1,1)
+            # if myintercept == np.nan:
+            #     myintercept = 0
+
+            # print(f'mycoef:{mycoef}')
+            # exit()
+
+            # tmp_pred = myintercept + np.dot(test_dummy,mycoef).reshape(-1,1)
+            tmp_pred = reg.predict(test_dummy)
             tmp_test['Weekly_Pred'] = tmp_pred
+            tmp_test = tmp_test.drop(['Wk','Yr'],axis=1)
+
             test_pred = pd.concat([test_pred, tmp_test])
+            # exit()
+
+    # print(test_pred.shape)
 
     
     return train,test_pred
@@ -183,6 +154,29 @@ if __name__ == '__main__':
         preds = scoring_df['Weekly_Pred'].fillna(0).to_numpy()
 
         wae.append((np.sum(weights * np.abs(actuals - preds)) / np.sum(weights)).item())
+        # print('WAE:',wae)
+        # print(sum(wae)/len(wae))
+        # exit()
+    # t = 1
+    # print(f'Fold{t}...')
+
+    # # *** THIS IS YOUR PREDICTION FUNCTION ***
+    # train, test_pred = mypredict(train, test, next_fold, t)
+
+    # # Load fold file
+    # # You should add this to your training data in the next call to mypredict()
+    # fold_file = 'fold_{t}.csv'.format(t=t)
+    # next_fold = pd.read_csv(fold_file, parse_dates=['Date'])
+
+    # # extract predictions matching up to the current fold
+    # scoring_df = next_fold.merge(test_pred, on=['Date', 'Store', 'Dept'], how='left')
+
+    # # extract weights and convert to numpy arrays for wae calculation
+    # weights = scoring_df['IsHoliday_x'].apply(lambda is_holiday:5 if is_holiday else 1).to_numpy()
+    # actuals = scoring_df['Weekly_Sales'].to_numpy()
+    # preds = scoring_df['Weekly_Pred'].fillna(0).to_numpy()
+
+    # wae.append((np.sum(weights * np.abs(actuals - preds)) / np.sum(weights)).item())
 
     print('WAE:',wae)
     print(sum(wae)/len(wae))

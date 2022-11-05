@@ -64,50 +64,31 @@ def mypredict(train, test, next_fold, t):
     
     
     if t!=1:
-        # print(next_fold.head(5))
-        # print(next_fold.shape)
-        # print(train.shape)
-        # print('train:',train.head(5))
-        # exit()
         train = pd.concat([train,next_fold])
-        # print(train.shape)
-        # print('train:',train.head(5))
-        # exit()
-    print(f'train shape:{train.shape}')
+    # print(f'train shape:{train.shape}')
     start_date = pd.to_datetime("2011-03-01") + relativedelta(months=2 * (t-1))
     end_date = pd.to_datetime("2011-05-01") + relativedelta(months=2 * (t-1))
 
     # find_week = lambda x : x.isocalendar()[1]+1  if x.isocalendar()[0] == 2010 else x.isocalendar()[1]
 
-    find_week = lambda x : x.isocalendar()[1]
-
-    test['Wk'] =  pd.to_datetime(test['Date']).apply(find_week)
-    train['Wk'] =  pd.to_datetime(train['Date']).apply(find_week)
-
     time_ids = (pd.to_datetime(test['Date'])>=start_date)&(pd.to_datetime(test['Date'])<end_date)
     test_current = test.loc[time_ids,]
 
-
     # print(f'test_current:{test_current}')
-    holiday_ids = test_current['IsHoliday']==False
-    test_current = test_current.loc[holiday_ids,]
+    # holiday_ids = test_current['IsHoliday']==False
+    # test_current = test_current.loc[holiday_ids,]
+    # test_current = test_current.drop(['IsHoliday'],axis=1)
 
-    start_last_year = pd.to_datetime(test_current['Date'].min()) -  relativedelta(days=375)
-    end_last_year = pd.to_datetime(test_current['Date'].max()) - relativedelta(days=350)
-
-
-    tmp_train_time_ids = (pd.to_datetime(train['Date'])>start_last_year)&(pd.to_datetime(train['Date'])<end_last_year)
-    tmp_train = train.loc[tmp_train_time_ids,]
-
+    most_current = pd.to_datetime(train['Date'].max())
+    train_ids = train['Date'] == most_current
+    tmp_train = train.loc[train_ids,]
     tmp_train = tmp_train.rename(columns={'Weekly_Sales':'Weekly_Pred'})
-    tmp_train = tmp_train.drop(['Date'],axis = 1)
+    # tmp_train = tmp_train.drop(['Date','IsHoliday'],axis=1)
+    tmp_train = tmp_train.drop(['Date'],axis=1)
 
-    test_pred = test_current.merge(tmp_train,how='left',on=['Dept', 'Store', 'Wk'])
-    test_pred.drop(['Wk'],axis=1)
-
-    train = train.drop(['Wk'],axis=1)
-
-    
+    test_pred = test_current.merge(tmp_train, on=['Store', 'Dept'], how='left')
+    # print(test_pred.head(5))
+    # exit()
 
     
     return train,test_pred
