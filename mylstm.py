@@ -1,14 +1,15 @@
 import numpy as np
-import sys
 import pandas as pd
-import datetime
-import sys
-import random
-import time
-from matplotlib import pyplot as plt
+from datetime import date
+from dateutil.parser import parse
+from dateutil.relativedelta import relativedelta
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import OneHotEncoder
+from sklearn import datasets, ensemble
 
+import warnings
+warnings.filterwarnings("ignore")
 class Optimizer:
-    #USE SAME DEFAULTS AS KERAS ADAM OPTIMIZER
     def __init__(self, lr=.1, beta_1=0.9, beta_2=0.999,
                  epsilon=0, decay=0., **kwargs):
         
@@ -173,6 +174,10 @@ class LstmNode:
 
         # concatenate x(t) and h(t-1)
         xc = np.hstack((x,  h_prev))
+        # print(f'xc:{xc.shape}')
+        # print(f'x:{x.shape}')
+        # print(f'h_prev:{h_prev.shape}')
+        # print(f'wg:{self.param.wg.shape}')
         self.state.g = np.tanh(np.dot(self.param.wg, xc) + self.param.bg)
         self.state.i = sigmoid(np.dot(self.param.wi, xc) + self.param.bi)
         self.state.f = sigmoid(np.dot(self.param.wf, xc) + self.param.bf)
@@ -230,12 +235,7 @@ class LstmNetwork():
         self.loss=loss
 
     def y_list_is(self, y_list, loss_layer):
-        """
-        Updates diffs by setting target sequence 
-        with corresponding loss layer. 
-        Will *NOT* update parameters.  To update parameters,
-        call self.lstm_param.apply_diff()
-        """
+
         assert len(y_list) == len(self.x_list)
         idx = len(self.x_list) - 1
         # first node only gets diffs from label ...
@@ -284,10 +284,7 @@ class LstmNetwork():
 
 
 class LossLayer:
-    """
-    Computes square loss with first element of hidden layer array.
-    MG-Attempted to add in mae loss for comparison, but RMSE and MAE loss performed the same.  
-    """
+
     @classmethod
     def loss(self,pred, label,fn):
         if(fn=='mae'):
@@ -313,113 +310,165 @@ class LossLayer:
 
 
 
-def modelTrain(loss, optimization):
+def modelTrain(X,Y,loss, optimization):
     mem_cell_ct = 50
-    x_dim = 4
+    x_dim = 57
     lstm_param = LstmParam(mem_cell_ct, x_dim,optimization)
     lstm_net = LstmNetwork(lstm_param,loss)
     losses=[]
     bestLoss=1e5
-    print("Training...")
-    for cur_iter in range(100):
        
-        for ind in range(len(Y)):
-            lstm_net.x_list_add(X[ind])
-
-        if(cur_iter%50==0):
-            print("iter", "%2s" % str(cur_iter), end=": ")
-            print("y_pred = [" +
-                  ", ".join(["% 2.5f" % lstm_net.lstm_node_list[ind].state.h[0] for ind in range(len(Y))]) +
-                  "]", end=", ")
-
-        loss = lstm_net.y_list_is(Y, LossLayer)
-        losses.append(loss)
-        if(loss<bestLoss):
-            best_lstm_net = LstmNetwork(lstm_param,loss)
-            
-        lstm_param.apply_diff(lr=0.1)
-        
-        if(cur_iter%50==0):
-            print("loss:", "%.3e" % loss)
-
-        lstm_net.x_list_clear()
-    
     for ind in range(len(Y)):
-        best_lstm_net.x_list_add(X[ind])   
-    loss = best_lstm_net.y_list_is(Y, LossLayer)
-    return losses, [ best_lstm_net.lstm_node_list[ind].state.h[0] for ind in range(len(Y))],loss
+        lstm_net.x_list_add(X[ind])
+
+    loss = lstm_net.y_list_is(Y, LossLayer)
+    losses.append(loss)
+
+    if(loss<bestLoss):
+        best_lstm_net = LstmNetwork(lstm_param,loss)
+        
+    lstm_param.apply_diff(lr=0.1)
+
+    lstm_net.x_list_clear()
+    
+    # for ind in range(len(Y)):
+    #     best_lstm_net.x_list_add(X[ind])   
+    # loss = best_lstm_net.y_list_is(Y, LossLayer)
+    return losses, [ lstm_net.lstm_node_list[ind].state.h[0] for ind in range(len(Y))],loss
 
 
 
-def firstTurbineData():
-    df = pd.read_csv('la-haute-borne-data-2013-2016.csv', sep=';')
-    print(df.head(5))
-    print(df.shape)
-    exit()
-    df['Date_time'] = df['Date_time'].astype(str).str[:-6] #remove timezone (caused me an hour of pain)
-    df.Date_time=pd.to_datetime(df['Date_time'])
-    df=df.fillna(method='ffill')
+def mypredict(train, test, next_fold, t):
+    
+    if t!=1:
+        train = pd.concat([train,next_fold],ignore_index=True)
 
-    df=df.sort_values(by='Date_time')
-    df = df.reset_index()
-    turbines=df.Wind_turbine_name.unique()
-    print("Turbine name: "+str(turbines[0]))
-    turbineData=df[df['Wind_turbine_name']==turbines[0]]
-    return turbineData
+    # not all depts need prediction
+    
+    start_date = pd.to_datetime("2011-03-01") + relativedelta(months=2 * (t-1))
+    end_date = pd.to_datetime("2011-05-01") + relativedelta(months=2 * (t-1))
+
+    # find_week = lambda x : x.isocalendar()[1]+1  if x.isocalendar()[0] == 2010 else x.isocalendar()[1]
+
+    find_week = lambda x : x.isocalendar()[1]
+    find_yr = lambda x : x.isocalendar()[0]
+
+    test['Wk'] =  pd.to_datetime(test['Date']).apply(find_week)
+    train['Wk'] =  pd.to_datetime(train['Date']).apply(find_week)
+
+    test['Yr'] =  pd.to_datetime(test['Date']).apply(find_yr)
+    train['Yr'] =  pd.to_datetime(train['Date']).apply(find_yr)
+
+    time_ids = (pd.to_datetime(test['Date'])>=start_date)&(pd.to_datetime(test['Date'])<end_date)
+    test_current = test.loc[time_ids,]
+
+    test_depts = test_current.Dept.unique()
+    test_pred = None
+
+    # print(train.head(5))
+    trainY = train['Weekly_Sales']
+
+    epochs = 50
+    for epoch in range(epochs):
+
+        avg_loss = []
+
+        for dept in test_depts:    
+        # no need to consider stores that do not need prediction
+        # or do not have training samples
+            train_dept_data = train[train['Dept']==dept]
+            test_dept_data = test_current[test_current['Dept']==dept]
+            train_stores = train_dept_data.Store.unique()
+            test_stores = test_dept_data.Store.unique()
+            test_stores = np.intersect1d(train_stores, test_stores)
+
+            for store in test_stores:
+                
+                tmp_train = train_dept_data[train_dept_data['Store']==store]
+                tmp_test = test_dept_data[test_dept_data['Store']==store]
 
 
-def createGraph(losses, title):
-    X = np.arange(0,len(losses))
-    figure = plt.figure()
-    tick_plot = figure.add_subplot(1, 1, 1)
-    tick_plot.plot(X, losses,  color='green', linestyle='-', marker='*' )
-    plt.xlabel('Iteration')
-    plt.ylabel('Loss')
-    plt.title(title)
-    plt.show()
+                trainY = tmp_train['Weekly_Sales']
+                tmp_train = tmp_train.drop(['Weekly_Sales'],axis=1)
 
 
-np.random.seed(0)
-date_to_test=datetime.datetime(2016, 1, 1)
-turbineData=np.sin(firstTurbineData().Wa_c_avg.values)[:10]
-X=np.array([turbineData[:4],
-                   turbineData[1:5],
-                   turbineData[2:6],
-                   turbineData[3:7],
-                   turbineData[4:8],
-                   turbineData[5:9]])
-# print(f'x shape:{X.shape}')
-# exit()
-Y=np.array([turbineData[4],
-                   turbineData[5],
-                   turbineData[6],
-                   turbineData[7],
-                   turbineData[8],
-                   turbineData[9]])
+                ohe = OneHotEncoder(handle_unknown='ignore',sparse=False,drop='if_binary')
+                enc = ohe.fit_transform(tmp_train[['Wk','IsHoliday','Yr']])
+        
 
-# train1 = pd.read_csv('train_ini.csv', parse_dates=['Date'])
 
-# train = pd.read_csv('train.csv', parse_dates=['Date'])
-# test = pd.read_csv('test.csv', parse_dates=['Date'])
+                # ### encoding features ###
+                train_dummy = pd.DataFrame(enc,columns=ohe.get_feature_names_out())
+                test_dummy = pd.DataFrame(ohe.transform(tmp_test[['Wk','IsHoliday','Yr']]),columns=ohe.get_feature_names_out())
 
-# test1 = pd.read_csv('fold_2.csv', parse_dates=['Date'])
+                train_dummy['Yr'] = tmp_train['Yr'].to_numpy()
+                train_dummy['Store'] = tmp_train['Store'].to_numpy()
+                train_dummy['Dept'] = tmp_train['Dept'].to_numpy()
 
-# print('train shape:',train1.shape)
-# print('train:',train1)
+                test_dummy['Yr'] = tmp_test['Yr'].to_numpy()
+                test_dummy['Store'] = tmp_test['Store'].to_numpy()
+                test_dummy['Dept'] = tmp_test['Dept'].to_numpy()
 
-# print('train shape:',train.shape)
-# print('train:',train)
-# exit()
-# losses, predictions,loss=train('rmse','sgd')
-losses, predictions,loss = modelTrain('mae','sgd')
-print("Actual vs Predicted:")
-# print(Y)
-# print(predictions)
-Avg_mae = np.mean(losses)
-print('Avg_mae:',Avg_mae)
-# createGraph(losses,"SGD Optimization\nLoss="+str(loss))
-# losses, predictions,loss=train('rmse','adam')
-# print("Actual vs Predicted:")
-# print(Y)
-# print(predictions)
-# createGraph(losses,"Adam Optimization\nLoss="+str(loss))
+                train_dummy_array = train_dummy.to_numpy()
+                trainY_array = trainY.to_numpy()
+
+
+                test_dummy_array = test_dummy.to_numpy()
+
+                losses, predictions,loss = modelTrain(train_dummy_array,trainY_array,'mae','sgd')
+                avg_loss += losses
+        
+        if(epoch%5==0):
+            print("iter", "%2s" % str(epoch), end=": ")
+        
+        averageLoss = np.mean(avg_loss)
+        if(epoch%50==0):
+            print("loss:", "%.3e" % averageLoss)
+    # print('train shape:',train_dummy.shape)
+    # print('test shape:',test_dummy.shape)
+
+    # print('test shape:',train_dummy_array.shape)
+    # print('test shape:',test_dummy_array.shape)
+    # exit()
+
+    # ### covert to dataframe ###
+
+
+    
+    return train,test_pred
+
+
+
+if __name__ == '__main__':
+
+    train = pd.read_csv('train_ini.csv', parse_dates=['Date'])
+    test = pd.read_csv('test.csv', parse_dates=['Date'])
+
+    # save weighed mean absolute error WMAE
+    n_folds = 10
+    next_fold = None
+    wae = []
+
+    for t in range(1, n_folds+1):
+        print(f'Fold{t}...')
+
+        # *** THIS IS YOUR PREDICTION FUNCTION ***
+        train, test_pred = mypredict(train, test, next_fold, t)
+
+        # Load fold file
+        # You should add this to your training data in the next call to mypredict()
+        fold_file = 'fold_{t}.csv'.format(t=t)
+        next_fold = pd.read_csv(fold_file, parse_dates=['Date'])
+
+        # extract predictions matching up to the current fold
+        scoring_df = next_fold.merge(test_pred, on=['Date', 'Store', 'Dept'], how='left')
+
+        # extract weights and convert to numpy arrays for wae calculation
+        weights = scoring_df['IsHoliday_x'].apply(lambda is_holiday:5 if is_holiday else 1).to_numpy()
+        actuals = scoring_df['Weekly_Sales'].to_numpy()
+        preds = scoring_df['Weekly_Pred'].fillna(0).to_numpy()
+
+        wae.append((np.sum(weights * np.abs(actuals - preds)) / np.sum(weights)).item())
+
+    print('WAE:',wae)
+    print(sum(wae)/len(wae))

@@ -73,7 +73,7 @@ def mypredict(train, test, next_fold, t):
         # print(train.shape)
         # print('train:',train.head(5))
         # exit()
-    print(f'train shape:{train.shape}')
+    # print(f'train shape:{train.shape}')
     start_date = pd.to_datetime("2011-03-01") + relativedelta(months=2 * (t-1))
     end_date = pd.to_datetime("2011-05-01") + relativedelta(months=2 * (t-1))
 

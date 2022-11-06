@@ -62,16 +62,11 @@ def mypredict(train, test, next_fold, t):
             train_dummy = pd.DataFrame(enc,columns=ohe.get_feature_names_out())
             test_dummy = pd.DataFrame(ohe.transform(tmp_test[['Wk','IsHoliday','Yr']]),columns=ohe.get_feature_names_out())
 
-            # print('train Yr:',tmp_train['Yr'])
-            # print('train Dept:',tmp_train['Dept'])
-            # print('train Store:',tmp_train['Store'])
             ### covert to dataframe ###
             train_dummy['Yr'] = tmp_train['Yr'].to_numpy()
             train_dummy['Store'] = tmp_train['Store'].to_numpy()
             train_dummy['Dept'] = tmp_train['Dept'].to_numpy()
-            # print('train_dummy Yr:',train_dummy['Yr'])
-            # print('train_dummy Dept:',train_dummy['Dept'])
-            # print('train_dummy Store:',train_dummy['Store'])
+
             test_dummy['Yr'] = tmp_test['Yr'].to_numpy()
             test_dummy['Store'] = tmp_test['Store'].to_numpy()
             test_dummy['Dept'] = tmp_test['Dept'].to_numpy()
@@ -83,10 +78,7 @@ def mypredict(train, test, next_fold, t):
             train_dummy = train_dummy[new_col_list]
             test_dummy = test_dummy[new_col_list]
 
-            # print('dummy max:',train_dummy.max())
-            # print('Y max',trainY.max())
-            # train_dummy = train_dummy.fillna(0)
-            # trainY = trainY.fillna(0)
+            ### to do SVD or PCA ###
             params = {"n_estimators": 500,
                       "max_depth": 4,
                       "min_samples_split": 5,
