@@ -9,6 +9,8 @@ from sklearn import datasets, ensemble
 
 import xgboost as xgb
 
+from xgboost.sklearn import XGBRegressor
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -42,19 +44,56 @@ def mypredict(train, test, next_fold, t):
     for dept in test_depts:    
     # no need to consider stores that do not need prediction
     # or do not have training samples
+        #print(dept)
         train_dept_data = train[train['Dept']==dept]
         test_dept_data = test_current[test_current['Dept']==dept]
         train_stores = train_dept_data.Store.unique()
         test_stores = test_dept_data.Store.unique()
         test_stores = np.intersect1d(train_stores, test_stores)
-    
+        
+        if len(test_stores) == 0:
+            continue
+        
+        train_y_before_svd = []
+        train_dept_data["time"] = train_dept_data.Wk.astype("str") + train_dept_data.Yr.astype("str")
+        all_wk = pd.DataFrame(train_dept_data.time.unique(),columns = ["time"])
+        
         for store in test_stores:
             
+            
+            tmp_train = train_dept_data[train_dept_data['Store']==store]
+            tmp_train["time"] = tmp_train.Wk.astype("str") + tmp_train.Yr.astype("str")
+            tmp_data = pd.merge(all_wk,tmp_train,on="time",how="left")
+            
+
+            trainY = tmp_data['Weekly_Sales'].fillna(1e-7).values
+            train_y_before_svd.append(trainY)
+        
+        train_y_before_svd = np.array(train_y_before_svd)
+        #print(train_y_before_svd.shape)
+        train_y_before_svd_mean = train_y_before_svd.mean(axis = 1)
+        train_y_mean = train_y_before_svd - train_y_before_svd_mean.reshape(-1,1)
+        u,sigma,vt = np.linalg.svd(train_y_mean)
+        d = min(10,train_y_mean.shape[0])
+        u = u[:,:d]
+        sigma = sigma[:d]
+        vt = vt[:d,:]
+        train_y = u@np.diag(sigma)@vt + train_y_before_svd_mean.reshape(-1,1)
+        
+        train_y_dict = {}
+        for i in range(len(test_stores)):
+            trainY = train_y[i]
+            trainY = trainY[train_y_before_svd[i]!=1e-7]
+            train_y_dict[test_stores[i]] = trainY
+            
+    
+        for store in test_stores:
+            #print(store)
             tmp_train = train_dept_data[train_dept_data['Store']==store]
             tmp_test = test_dept_data[test_dept_data['Store']==store]
 
 
-            trainY = tmp_train['Weekly_Sales']
+            trainY = train_y_dict[store]
             tmp_train = tmp_train.drop(['Weekly_Sales'],axis=1)
 
             ohe = OneHotEncoder(handle_unknown='ignore',sparse=False,drop='if_binary')
@@ -81,16 +120,28 @@ def mypredict(train, test, next_fold, t):
             test_dummy = test_dummy[new_col_list]
 
             ### to do SVD or PCA ###
+            
+            
             params = {"n_estimators": 500,
                       "max_depth": 4,
                       "min_samples_split": 5,
                       "learning_rate": 0.01,
                       "loss": "squared_error",
             }
-            # reg = LinearRegression().fit(train_dummy, trainY)
 
-            reg = ensemble.GradientBoostingRegressor(**params)
-            reg.fit(train_dummy, trainY)
+
+
+            reg = XGBRegressor(learning_rate = 0.01, 
+                               max_depth = 6, 
+                               n_estimators = 300,
+                               random_state = 4777,
+                               verbosity = 0)
+            reg.fit(train_dummy,trainY)
+            # reg = Ridge(alpha = 0.15)
+
+            #reg = ensemble.GradientBoostingRegressor(**params)
+            #print(train_dummy.shape,trainY.shape)
+            # reg.fit(train_dummy, trainY)
             # mycoef = reg.coef_
             # myintercept = reg.intercept_
             # mycoef[np.isnan(mycoef)] = 0
@@ -104,6 +155,8 @@ def mypredict(train, test, next_fold, t):
             # exit()
 
             # tmp_pred = myintercept + np.dot(test_dummy,mycoef).reshape(-1,1)
+
+            
             tmp_pred = reg.predict(test_dummy)
             tmp_test['Weekly_Pred'] = tmp_pred
             tmp_test = tmp_test.drop(['Wk','Yr'],axis=1)
@@ -148,6 +201,7 @@ if __name__ == '__main__':
         preds = scoring_df['Weekly_Pred'].fillna(0).to_numpy()
 
         wae.append((np.sum(weights * np.abs(actuals - preds)) / np.sum(weights)).item())
+        print((np.sum(weights * np.abs(actuals - preds)) / np.sum(weights)).item())
         # print('WAE:',wae)
         # print(sum(wae)/len(wae))
         # exit()
