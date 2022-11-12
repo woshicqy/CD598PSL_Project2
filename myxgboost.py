@@ -131,9 +131,9 @@ def mypredict(train, test, next_fold, t):
 
 
 
-            reg = XGBRegressor(learning_rate = 0.01, 
+            reg = XGBRegressor(learning_rate = 0.3, 
                                max_depth = 6, 
-                               n_estimators = 300,
+                               n_estimators = 50,
                                random_state = 4777,
                                verbosity = 0)
             reg.fit(train_dummy,trainY)
