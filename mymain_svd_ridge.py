@@ -72,15 +72,30 @@ def mypredict(train, test, next_fold, t):
             train_y_before_svd.append(trainY)
         
         train_y_before_svd = np.array(train_y_before_svd)
-        #print(train_y_before_svd.shape)
+        print(train_y_before_svd.shape)
+        print(f'test_stores shape:{test_stores.shape}')
+
         train_y_before_svd_mean = train_y_before_svd.mean(axis = 1)
+        print(f'train_y_before_svd_mean shape:{train_y_before_svd_mean.shape}')
         train_y_mean = train_y_before_svd - train_y_before_svd_mean.reshape(-1,1)
-        u,sigma,vt = np.linalg.svd(train_y_mean)
+        print(f'train_y_mean shape:{train_y_mean.shape}')
+        
+        u,sigma,vt = np.linalg.svd(train_y_mean,full_matrices=False)
+        print(f'u shape:{u.shape}')
+        print(f'vt shape:{vt.shape}')
+        print(f'sigma shape:{sigma.shape}')
+
+        ### 8 vs 10,
         d = min(10,train_y_mean.shape[0])
+        # d = 8
         u = u[:,:d]
         sigma = sigma[:d]
+        # sigma = np.diag(np.array([sigma[i] if i < d else 0 for i in range(sigma.size)]))
         vt = vt[:d,:]
         train_y = u@np.diag(sigma)@vt + train_y_before_svd_mean.reshape(-1,1)
+        print(f'train_y shape:{train_y.shape}')
+
+        # train_y = u@sigma@vt + train_y_before_svd_mean.reshape(-1,1)
         
         train_y_dict = {}
         for i in range(len(test_stores)):
