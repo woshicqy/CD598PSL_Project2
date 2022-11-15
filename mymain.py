@@ -7,18 +7,8 @@ from dateutil.relativedelta import relativedelta
 from sklearn.linear_model import LinearRegression,Ridge,Lasso
 from sklearn.preprocessing import OneHotEncoder
 from sklearn import datasets, ensemble
-import xgboost as xgb
-# import warnings
-# warnings.filterwarnings("ignore")
-
-def splitdata(x, list=['Store','Dept']):
-    #x_ind = x[list].drop_duplicates().values
-    
-    x_gb = x.groupby(list)
-    x_ind = test_ind_1 = np.array([(x_gb.get_group(i))[list].iloc[0].to_list() for i in x_gb.groups])
-    x_splitted = [(x_gb.get_group(i)).drop(list, axis=1) for i in x_gb.groups]
-
-    return x_ind, x_splitted
+import warnings
+warnings.filterwarnings("ignore")
 
 def convert(x,drop=True):
     find_week = lambda x : x.isocalendar()[1]
@@ -66,9 +56,12 @@ def mypredict(train, test, next_fold, t_input):
 
       holiday = [36, 47, 52, 6]
       
-      converted['Week_norm'] = converted['Yr'] * 100 + converted['Wk']
-      # train = train.drop('Week', axis = 1)
-      inds, converted_splitted = splitdata(converted, ['Dept'])
+      converted['time'] = converted['Yr'] * 100 + converted['Wk']
+
+      x_gb = converted.groupby(['Dept'])
+      inds = np.array([(x_gb.get_group(i))[['Dept']].iloc[0].to_list() for i in x_gb.groups])
+      converted_splitted = [(x_gb.get_group(i)).drop(['Dept'], axis=1) for i in x_gb.groups]
+
       inds = np.array(inds).reshape(-1)
 
       cropped_df = []
@@ -76,7 +69,7 @@ def mypredict(train, test, next_fold, t_input):
       for i in range(inds.size):
 
         X = (converted_splitted[i]).drop(['Yr'], axis=1).pivot(
-            index='Store', columns='Week_norm', values='Weekly_Sales').fillna(0)
+            index='Store', columns='time', values='Weekly_Sales').fillna(0)
         X_mean = X.mean(axis=1).to_numpy()
 
         X_np = X.to_numpy()
@@ -89,17 +82,15 @@ def mypredict(train, test, next_fold, t_input):
         X_cropped = pd.DataFrame(X_pca, index=X.index, columns=X.columns)
 
         X_cropped = X_cropped.reset_index()
-        X1 = pd.melt(X_cropped, id_vars='Store', value_vars=X_cropped.columns).sort_values(by=['Store','Week_norm'])
+        X1 = pd.melt(X_cropped, id_vars='Store', value_vars=X_cropped.columns).sort_values(by=['Store','time'])
         final_df = pd.DataFrame([])
 
         final_df['Store'] = X1['Store']
-        final_df['Yr'] = np.floor(X1['Week_norm'].to_numpy().astype(int)/100).astype(int)
-        final_df['Wk'] = np.mod(X1['Week_norm'].to_numpy().astype(int), 100)
+        final_df['Yr'] = np.floor(X1['time'].to_numpy().astype(int)/100).astype(int)
+        final_df['Wk'] = np.mod(X1['time'].to_numpy().astype(int), 100)
         final_df['Weekly_Sales'] = pd.melt(X_cropped, id_vars='Store', value_vars=X_cropped.columns)['value']
 
         final_df = final_df.reindex()
-        # print(final_df.shape)
-
         cropped_df.append(final_df)
 
       for i in range(inds.size):
@@ -111,7 +102,6 @@ def mypredict(train, test, next_fold, t_input):
       holiday = [36, 47, 52, 6]
       wk = output['Wk']
       output['IsHoliday'] = np.where((wk.isin(holiday)).to_numpy(),True,False)
-      # print(output.head(5))
 
       for dept in test_depts:
         train_dept_data = output[output['Dept']==dept]
@@ -136,29 +126,20 @@ def mypredict(train, test, next_fold, t_input):
           test_dummy = pd.DataFrame(ohe.transform(tmp_test[['Wk','IsHoliday','Yr']]),columns=ohe.get_feature_names_out())
 
           ### covert to dataframe ###
-          # print(train_dummy.head(5))
-          # exit()
-          # train_dummy['Yr'] = tmp_train['Yr'].to_numpy()
-          # train_dummy['QYr'] = tmp_train['QYr'].to_numpy()
           train_dummy['Store'] = tmp_train['Store'].to_numpy()
           train_dummy['Dept'] = tmp_train['Dept'].to_numpy()
 
-          # test_dummy['Yr'] = tmp_test['Yr'].to_numpy()
-          # test_dummy['QYr'] = test_dummy['QYr'].to_numpy()
           test_dummy['Store'] = tmp_test['Store'].to_numpy()
           test_dummy['Dept'] = tmp_test['Dept'].to_numpy()
 
           new_col_list = ohe.get_feature_names_out()
-          # print(f'new_col_list:{new_col_list}')
           new_col_list = new_col_list.tolist() + ['Dept','Store']
-          # print(f'new_col_list:{new_col_list}')
           train_dummy = train_dummy[new_col_list]
           test_dummy = test_dummy[new_col_list]
+          
           reg = Ridge(alpha = 0.17)
-          # print(f'train_dummy shape:{train_dummy.shape}')
-          # print(f'trainY shape:{trainY.shape}')
           reg.fit(train_dummy, trainY)
-          # print(f'test_dummy shape:{test_dummy.shape}')
+
           tmp_pred = reg.predict(test_dummy)
           tmp_test['Weekly_Pred'] = tmp_pred
           #tmp_test = tmp_test.drop(['Wk','Yr'],axis=1)
