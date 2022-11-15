@@ -7,8 +7,8 @@ from dateutil.relativedelta import relativedelta
 from sklearn.linear_model import LinearRegression,Ridge,Lasso
 from sklearn.preprocessing import OneHotEncoder
 from sklearn import datasets, ensemble
-import warnings
-warnings.filterwarnings("ignore")
+# import warnings
+# warnings.filterwarnings("ignore")
 
 def convert(x,drop=True):
     find_week = lambda x : x.isocalendar()[1]
